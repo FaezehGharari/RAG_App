@@ -9,6 +9,7 @@ import datetime
 from data_loader import load_and_chunk_pdf, embed_text
 from vector_db import QdrantStorage
 from custom_types import RAGChunkAndSrc, RAGQueryResult, RAGSearchResults, RAGUpsertResult
+import os
 
 load_dotenv()
 
@@ -43,10 +44,54 @@ async def rag_ingest_pdf(ctx: inngest.Context):
     chunks_and_sources = await ctx.step.run("chunks_and_resources", lambda: _load(ctx), output_type=RAGChunkAndSrc)
     ingested = await ctx.step.run("embed_and_upsert", lambda: _upsert(chunks_and_sources), output_type=RAGUpsertResult)
     return ingested.model_dump()
-    #return int(len(chunks_and_sources.chunks))
 
+@inngest_client.create_function(
+    fn_id="RAG: search pdf",
+    trigger=inngest.TriggerEvent(event= "search_pdf")
+)
+async def rag_search_pdf(ctx : inngest.Context):
+    def _search(question: str, top_k: int = 5) -> RAGSearchResults:
+        query_vector = embed_text([question])[0]
+        storage = QdrantStorage()
+        found = storage.search(query_vector,top_k)
+        return RAGSearchResults(context= found["context"], sources= found["sources"])
+
+    question = ctx.event.data["question"]
+    top_k = int(ctx.event.data.get("top_k", 5))
+
+    found = await ctx.step.run("embed_query_and_search", lambda: _search(question , top_k), output_type=RAGSearchResults)
+
+    context_block = "\n\n".join(f"- {c}" for c in found.context)
+    user_content = (
+        "use the following context to answer the question\n\n"
+        f"context:\n{context_block}\n\n"
+        f"question:\n{question}\n\n"
+        "answer concisely using the context above."
+    )
+
+    adapter = ai.openai.Adapter(
+        auth_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+        model= "google/gemma-4-31b-it:free"
+    )
+
+    response = await ctx.step.ai.infer(
+        "llm_answer",
+        adapter=adapter,
+        body={
+            "max_tokens": 1024,
+            "temperature": 0.2,
+            "messages":[
+                {"role": "system", "content": "you answer questions using only the provided context"},
+                {"role": "user", "content": user_content}
+            ]
+        }
+    )
+
+    answer= response["choices"][0]["message"]["content"].strip()
+    return {"answer": answer, "sources": found.sources, "num_contexts": len(found.context)}
 
 
 app = FastAPI()
 
-inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf])
+inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf, rag_search_pdf])
