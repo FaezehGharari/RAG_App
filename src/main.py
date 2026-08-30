@@ -5,11 +5,11 @@ import inngest.fast_api
 from inngest.experimental import ai
 from dotenv import load_dotenv
 import uuid
-import datetime
 from data_loader import load_and_chunk_pdf, embed_text
 from vector_db import QdrantStorage
-from custom_types import RAGChunkAndSrc, RAGQueryResult, RAGSearchResults, RAGUpsertResult
+from custom_types import RAGChunkAndSrc, RAGSearchResults, RAGUpsertResult
 import os
+import datetime
 
 load_dotenv()
 
@@ -17,13 +17,20 @@ inngest_client = inngest.Inngest(
     app_id="rag_app",
     logger=logging.getLogger("uvicorn") ,
     is_production=False,
-    serializer=inngest.PydanticSerializer()
-
+    serializer=inngest.PydanticSerializer(),
 )
 
 @inngest_client.create_function(
     fn_id="RAG: Ingest PDF",
-    trigger=inngest.TriggerEvent(event="rag/ingest_pdf")
+    trigger=inngest.TriggerEvent(event="rag/ingest_pdf"),
+    throttle=inngest.Throttle(
+        limit=2, period=datetime.timedelta(minutes=1)
+    ),
+    rate_limit=inngest.RateLimit(
+        limit=1,
+        period=datetime.timedelta(hours=4),
+        key="event.data.source_id",
+  ),
 )
 async def rag_ingest_pdf(ctx: inngest.Context):
     def _load(ctx: inngest.Context) -> RAGChunkAndSrc:

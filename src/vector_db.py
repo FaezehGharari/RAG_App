@@ -30,7 +30,7 @@ class QdrantStorage:
         for r in results:
             payload = getattr(r, "payload", None)
             text = payload.get("text", "")
-            source = payload.get("source", "")
+            source = payload.get("sources", "")
             if text:
                 context.append(text)
                 sources.add(source)
