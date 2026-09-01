@@ -1,9 +1,12 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
+from config import settings
+import logging
 
-EMBED_DIM = 2048
+logger = logging.getLogger("uvicorn")
+
 class QdrantStorage:
-    def __init__(self, url="http://localhost:6333", collection="docs", dim=EMBED_DIM):
+    def __init__(self, url="http://localhost:6333", collection="docs", dim=settings.embedding_dimension):
         self.client = QdrantClient(url= url, timeout=30)
         self.collection= collection
         if not self.client.collection_exists(self.collection):
@@ -13,16 +16,24 @@ class QdrantStorage:
             )
 
     def upsert(self, ids, vectors, payloads):
-        points= [PointStruct(id=ids[i], vector=vectors[i], payload=payloads[i]) for i in range(len(ids))]
-        self.client.upsert(self.collection, points=points)
+        try:
+            points= [PointStruct(id=ids[i], vector=vectors[i], payload=payloads[i]) for i in range(len(ids))]
+            self.client.upsert(self.collection, points=points)
+        except Exception:
+            logger.exception("Qdrant upsert failed!")
+            raise
 
     def search(self, query_vector, top_k:int=5):
-        query_points = self.client.query_points(
-            collection_name=self.collection,
-            query=query_vector,
-            with_payload=True,
-            limit=top_k
-        )
+        try:
+            query_points = self.client.query_points(
+                collection_name=self.collection,
+                query=query_vector,
+                with_payload=True,
+                limit=top_k
+            )
+        except Exception:
+            logging.exception("Failed to fetch query points!")
+            raise
 
         results= query_points.points
         context = []
