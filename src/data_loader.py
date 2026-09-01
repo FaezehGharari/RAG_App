@@ -46,3 +46,4 @@ def embed_text(texts: list[str]) -> list[list[float]]:
         return [item.embedding for item in responce.data]
     except Exception:
         logger.exception("Embedding generation failed. texts_count=%d",len(texts),)
+        raise
