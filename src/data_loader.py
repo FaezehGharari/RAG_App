@@ -3,8 +3,13 @@ from llama_index.readers.file import PDFReader
 from llama_index.core.node_parser import SentenceSplitter
 from dotenv import load_dotenv
 import os
+from config import settings
+from pathlib import Path
+import logging
 
 load_dotenv()
+
+logger = logging.getLogger("uvicorn")
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -12,13 +17,19 @@ client = OpenAI(
     timeout=30
 )
 
-EMBED_MODEL = "nvidia/nemotron-3-embed-1b:free"
-EMBED_DIM = 2048
-
-splitter = SentenceSplitter(chunk_size=1000, chunk_overlap=200)
+splitter = SentenceSplitter(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
 
 def load_and_chunk_pdf(path: str):
-    docs = PDFReader().load_data(file=path)
+    pdf_path = Path(path)
+    if not pdf_path.exists():
+        raise FileNotFoundError("pdf file not found ", pdf_path)
+    
+    try:
+        docs = PDFReader().load_data(file=path)
+    except Exception:
+        logger.exception("Failed to load PDF %s", pdf_path)
+        raise
+
     text = [d.text for d in docs if getattr(d,"text", None)]
     chunks = []
     for t in text:
@@ -26,9 +37,12 @@ def load_and_chunk_pdf(path: str):
     return chunks
 
 def embed_text(texts: list[str]) -> list[list[float]]:
-    responce = client.embeddings.create(
-        input=texts,
-        model=EMBED_MODEL,
-        encoding_format="float"
-    )
-    return [item.embedding for item in responce.data]
+    try:
+        responce = client.embeddings.create(
+            input=texts,
+            model=settings.embedding_model,
+            encoding_format="float"
+        )
+        return [item.embedding for item in responce.data]
+    except Exception:
+        logger.exception("Embedding generation failed. texts_count=%d",len(texts),)

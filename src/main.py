@@ -10,6 +10,7 @@ from vector_db import QdrantStorage
 from custom_types import RAGChunkAndSrc, RAGSearchResults, RAGUpsertResult
 import os
 import datetime
+from config import settings
 
 load_dotenv()
 
@@ -79,7 +80,7 @@ async def rag_search_pdf(ctx : inngest.Context):
     adapter = ai.openai.Adapter(
         auth_key=os.getenv("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1",
-        model= "google/gemma-4-31b-it:free"
+        model= settings.llm_model
     )
 
     response = await ctx.step.ai.infer(
